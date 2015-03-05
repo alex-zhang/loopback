@@ -39,19 +39,35 @@ module.exports = token;
  * @property {Array} [cookies] Array of cookie names.
  * @property {Array} [headers] Array of header names.
  * @property {Array} [params] Array of param names.
- * @property {Array} [model] An AccessToken object to use.
+ * @property {Function|String} [model] AccessToken model name or class to use.
+ * @property {String} [currentUserLiteral] String literal for the current user.
  * @header loopback.token([options])
  */
 
 function token(options) {
   options = options || {};
   var TokenModel = options.model || loopback.AccessToken;
-  assert(TokenModel, 'loopback.token() middleware requires a AccessToken model');
+  if (typeof TokenModel === 'string') {
+    // Make it possible to configure the model in middleware.json
+    TokenModel = loopback.getModel(TokenModel);
+  }
+  var currentUserLiteral = options.currentUserLiteral;
+  if (currentUserLiteral && (typeof currentUserLiteral !== 'string')) {
+    currentUserLiteral = 'me';
+  }
+  assert(typeof TokenModel === 'function',
+    'loopback.token() middleware requires a AccessToken model');
 
   return function(req, res, next) {
     if (req.accessToken !== undefined) return next();
     TokenModel.findForRequest(req, options, function(err, token) {
       req.accessToken = token || null;
+      if (token && token.userId && currentUserLiteral) {
+        // Replace /me/ with /current-user-id/
+        req.url = req.url.replace(
+          new RegExp('/' + currentUserLiteral + '(/|$|\\?)', 'g'),
+            '/' + token.userId + '$1');
+      }
       var ctx = loopback.getCurrentContext();
       if (ctx) ctx.set('accessToken', token);
       next(err);
